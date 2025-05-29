@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Practical Lab 1: Univariate Linear Regression for California Housing Prices</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; background: #f9f9f9; }
+        h1, h2, h3 { color: #2c3e50; }
+        code, pre { background: #f4f4f4; padding: 0.2em 0.4em; border-radius: 4px; }
+        table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        th, td { border: 1px solid #bbb; padding: 0.5em 1em; text-align: left; }
+        th { background: #eaeaea; }
+        .section { margin-bottom: 2em; }
+        .code-block { background: #f4f4f4; border-left: 4px solid #bdbdbd; padding: 1em; margin: 1em 0; overflow-x: auto; }
+        .note { background: #fffbe6; border-left: 4px solid #ffe066; padding: 1em; margin: 1em 0; }
+    </style>
+</head>
+<body>
+    <h1>Practical Lab 1: Univariate Linear Regression for California Housing Prices</h1>
+
+    <div class="section">
+        <h2>1. Framing the Problem</h2>
+        <p>
+            In this lab, our focus is on building and analyzing univariate linear regression models for the prediction of housing prices in California. A perspective will be taken on the ways particular demographic factors—median income, population, and number of households—influence the price of a valuation when considered in isolation. This helps in finding the factor with the maximum impact on housing prices. The results from such studies can help product teams and policy makers as they make data-related decisions on housing and community planning.
+        </p>
+    </div>
+
+    <div class="section">
+        <h2>2. Getting the Data</h2>
+        <p>
+            <strong>Data source:</strong>
+            <a href="https://www.kaggle.com/datasets/camnugent/california-housing-prices" target="_blank">
+                https://www.kaggle.com/datasets/camnugent/california-housing-prices
+            </a>
+        </p>
+        <div class="code-block">
+            <pre><code>import pandas as pd
+
+# Load local housing.csv file
+df = pd.read_csv('housing.csv')
+
+# Show the first few rows
+df.head()</code></pre>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>3. Exploratory Data Analysis (EDA)</h2>
+        <h3>1. Explore statistics (using Pandas <code>describe</code> function)</h3>
+        <div class="code-block">
+            <pre><code>if df is not None:
+    print("Descriptive statistics for the entire dataset:")
+    print(df.describe())
+
+    # Focus on the variables of interest for this lab
+    variables_of_interest = ['median_house_value', 'median_income', 'population', 'households']
+    print("\nDescriptive statistics for key variables:")
+    if all(col in df.columns for col in variables_of_interest):
+        print(df[variables_of_interest].describe())
+    else:
+        print(f"One or more key variables not found. Available columns: {df.columns}")
+else:
+    print("DataFrame not loaded. Cannot perform EDA.")</code></pre>
+        </div>
+
+        <h3>2. Scatter Plots</h3>
+        <div class="code-block">
+            <pre><code>import matplotlib.pyplot as plt
+import seaborn as sns
+
+if df is not None and all(col in df.columns for col in variables_of_interest):
+    plt.figure(figsize=(18, 6)) # Adjust figure size for better layout
+
+    #  Median House Value vs. Median Income
+    plt.subplot(1, 3, 1)
+    sns.scatterplot(x='median_income', y='median_house_value', data=df, alpha=0.6)
+    plt.title('Median House Value vs. Median Income')
+    plt.xlabel('Median Income (in tens of thousands of $)')
+    plt.ylabel('Median House Value ($)')
+    plt.grid(True)
+
+    #  Median House Value vs. Population
+    plt.subplot(1, 3, 2)
+    sns.scatterplot(x='population', y='median_house_value', data=df, alpha=0.6)
+    plt.title('Median House Value vs. Population')
+    plt.xlabel('Population')
+    plt.ylabel('Median House Value ($)')
+    plt.grid(True)
+
+    # Median House Value vs. Number of Households
+    plt.subplot(1, 3, 3)
+    sns.scatterplot(x='households', y='median_house_value', data=df, alpha=0.6)
+    plt.title('Median House Value vs. Number of Households')
+    plt.xlabel('Number of Households')
+    plt.ylabel('Median House Value ($)')
+    plt.grid(True)
+
+    plt.tight_layout() 
+    plt.show()
+else:
+    print("DataFrame not loaded or key variables missing. Cannot create scatter plots.")</code></pre>
+        </div>
+        <div class="note">
+            <strong>Interpretation:</strong>
+            <p>
+                The scatterplot shows a strong potential in linear regression for median income to predict the median house value. That relationship, however, shows an increase in variance as the incomes go higher (heteroscedasticity issue). Meanwhile, population and number of households show greater linear relations but less well-defined with the median house value. These two are heavily skewed: most data points are concentrated on the lower end of the scale, so they might be poor linear predictors or else might need to be transformed to be useful in a linear regression framework.
+            </p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>4. Variable Descriptions</h2>
+        <ul>
+            <li>
+                <strong>Median house value:</strong> The dependent variable, representing the money worth of houses in specific areas, measured in dollars, ranging from $0 to $500,000.
+            </li>
+            <li>
+                <strong>Median Income:</strong> An independent variable, showing the typical income of the households (in tens of thousands of dollars), ranging from $0 to $150,000. Appears somewhat right-skewed with higher density at lower to middle income.
+            </li>
+            <li>
+                <strong>Population:</strong> An independent variable showing the number of people in an area, from 0 to over 35,000. Highly right-skewed; most areas have small populations.
+            </li>
+            <li>
+                <strong>Number of households:</strong> An independent variable showing the count of household units in the area, from 0 to 6,000. Also highly right-skewed, with data concentrated at low household counts.
+            </li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>5. Linear Regression Fitting</h2>
+        <div class="code-block">
+            <pre><code>from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+import numpy as np
+
+if df is not None and all(col in df.columns for col in variables_of_interest):
+    # Prepare the dependent variable
+    y = df['median_house_value']
+
+    # 1: Median House Value vs. Median Income 
+    X1 = df[['median_income']] 
+    model1 = LinearRegression()
+    model1.fit(X1, y)
+    y_pred1 = model1.predict(X1) 
+
+    # Store results for table and plotting
+    intercept1 = model1.intercept_
+    slope1 = model1.coef_[0]
+    mse1 = mean_squared_error(y, y_pred1)
+    mae1 = mean_absolute_error(y, y_pred1)
+
+    print(f"--- Model 1: Median Income ---")
+    print(f"Intercept (b0): {intercept1:.2f}")
+    print(f"Slope (b1): {slope1:.2f}")
+    print(f"MSE: {mse1:.2f}")
+    print(f"MAE: {mae1:.2f}\n")
+
+    #  2: Median House Value vs. Population 
+    X2 = df[['population']]
+    model2 = LinearRegression()
+    model2.fit(X2, y)
+    y_pred2 = model2.predict(X2)
+
+    intercept2 = model2.intercept_
+    slope2 = model2.coef_[0]
+    mse2 = mean_squared_error(y, y_pred2)
+    mae2 = mean_absolute_error(y, y_pred2)
+
+    print(f"--- Model 2: Population ---")
+    print(f"Intercept (b0): {intercept2:.2f}")
+    print(f"Slope (b1): {slope2:.2f}")
+    print(f"MSE: {mse2:.2f}")
+    print(f"MAE: {mae2:.2f}\n")
+
+    #  3: Median House Value vs. Number of Households 
+    X3 = df[['households']]
+    model3 = LinearRegression()
+    model3.fit(X3, y)
+    y_pred3 = model3.predict(X3)
+
+    intercept3 = model3.intercept_
+    slope3 = model3.coef_[0]
+    mse3 = mean_squared_error(y, y_pred3)
+    mae3 = mean_absolute_error(y, y_pred3)
+
+    print(f"--- Model 3: Households ---")
+    print(f"Intercept (b0): {intercept3:.2f}")
+    print(f"Slope (b1): {slope3:.2f}")
+    print(f"MSE: {mse3:.2f}")
+    print(f"MAE: {mae3:.2f}\n")
+
+else:
+    print("DataFrame not loaded or key variables missing. Cannot fit models.")</code></pre>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>6. Regression Results Table</h2>
+        <p>This table summarizes the intercept, slope, Mean Squared Error (MSE), and Mean Absolute Error (MAE) for each of the three linear regression models.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Independent Variable</th>
+                    <th>Intercept (b0)</th>
+                    <th>Slope (b1)</th>
+                    <th>Mean Squared Error (MSE)</th>
+                    <th>Mean Absolute Error (MAE)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Median Income</td>
+                    <td>45085.58</td>
+                    <td>41793.85</td>
+                    <td>7011311502.93</td>
+                    <td>62625.93</td>
+                </tr>
+                <tr>
+                    <td>Population</td>
+                    <td>210436.26</td>
+                    <td>-2.51</td>
+                    <td>13307412412.39</td>
+                    <td>91153.82</td>
+                </tr>
+                <tr>
+                    <td>Number of Households</td>
+                    <td>196928.58</td>
+                    <td>19.87</td>
+                    <td>13257776904.73</td>
+                    <td>90802.74</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>7. Regression Line Plots</h2>
+        <div class="code-block">
+            <pre><code>if df is not None and 'model1' in locals(): 
+    plt.figure(figsize=(20, 7))
+
+    #  Median Income
+    plt.subplot(1, 3, 1)
+    sns.scatterplot(x='median_income', y='median_house_value', data=df, alpha=0.5, label='Actual Data')
+    plt.plot(X1, y_pred1, color='red', linewidth=2, label='Regression Line') 
+    plt.title('Median House Value vs. Median Income')
+    plt.xlabel('Median Income (tens of thousands of $)')
+    plt.ylabel('Median House Value ($)')
+    plt.legend()
+    plt.grid(True)
+    stats_text1 = (f"y = {slope1:.2f}x + {intercept1:.2f}\n"
+                   f"MSE: {mse1:,.0f}\n" 
+                   f"MAE: {mae1:,.0f}")
+  
+    plt.text(0.05, 0.95, stats_text1, transform=plt.gca().transAxes, fontsize=9,
+             verticalalignment='top', bbox=dict(boxstyle='round,pad=0.3', fc='wheat', alpha=0.7))
+
+    #  Population
+    plt.subplot(1, 3, 2)
+    sns.scatterplot(x='population', y='median_house_value', data=df, alpha=0.5, label='Actual Data')
+    plt.plot(X2, y_pred2, color='red', linewidth=2, label='Regression Line')
+    plt.title('Median House Value vs. Population')
+    plt.xlabel('Population')
+    plt.ylabel('Median House Value ($)')
+  
+    plt.legend()
+    plt.grid(True)
+    stats_text2 = (f"y = {slope2:.2f}x + {intercept2:.2f}\n"
+                   f"MSE: {mse2:,.0f}\n"
+                   f"MAE: {mae2:,.0f}")
+    plt.text(0.05, 0.95, stats_text2, transform=plt.gca().transAxes, fontsize=9,
+             verticalalignment='top', bbox=dict(boxstyle='round,pad=0.3', fc='wheat', alpha=0.7))
+
+    #  Number of Households
+    plt.subplot(1, 3, 3)
+    sns.scatterplot(x='households', y='median_house_value', data=df, alpha=0.5, label='Actual Data')
+    plt.plot(X3, y_pred3, color='red', linewidth=2, label='Regression Line')
+    plt.title('Median House Value vs. Number of Households')
+    plt.xlabel('Number of Households')
+    plt.ylabel('Median House Value ($)')
+  
+    plt.legend()
+    plt.grid(True)
+    stats_text3 = (f"y = {slope3:.2f}x + {intercept3:.2f}\n"
+                   f"MSE: {mse3:,.0f}\n"
+                   f"MAE: {mae3:,.0f}")
+    plt.text(0.05, 0.95, stats_text3, transform=plt.gca().transAxes, fontsize=9,
+             verticalalignment='top', bbox=dict(boxstyle='round,pad=0.3', fc='wheat', alpha=0.7))
+
+    plt.tight_layout()
+    plt.show()
+else:
+    print("DataFrame not loaded or models not fitted. Cannot create result plots.")</code></pre>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>8. Summary &amp; Conclusion</h2>
+        <p>
+            Predicting Median House Value with Median Income performs best out of the three, as its MSE and MAE are both significantly lower than the Population and Number of Households models.
+        </p>
+        <p>
+            The regression line of the Median Income model clearly goes up (b1 = 41793.85), compared to the nearly flat line of Population (b1 = −2.51) and the slightly tilted line of Number of Households (b1 = 19.87). There is little relationship between house values and the lines from these two models, partly because there are too many low and high predictor values.
+        </p>
+        <p>
+            Importantly, the significant data cap for a typical $500,000 house makes it harder for any model to be accurate with houses worth more. The Median Income model has errors that change in variance depending on a person’s income. Population and Number of Households have such small and weak slopes that they stand out as poor candidates for direct linear relations.
+        </p>
+        <p>
+            Overall, Median Income provides the best fitting results, though its ability to predict from data is still weak. The Population and Households models do not perform as well as the Housing and Labor Force models. Improved results could be achieved by altering data or using more advanced modeling methods in the future.
+        </p>
+    </div>
+</body>
+</html>
